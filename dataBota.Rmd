@@ -1,0 +1,72 @@
+---
+title: "Données Tela Botanica (départements 42 et 69)"
+author: "Lise Vaudor"
+date: "06/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+library(dplyr)
+```
+
+Données Tela Botanica (départements 42 et 69)
+
+```{r dat69, warning=FALSE, message=FALSE}
+dat=bind_rows(readr::read_csv("cel_export_1.csv"),
+                readr::read_csv("cel_export_2.csv"))%>% 
+  janitor::clean_names() %>% 
+  mutate(info=glue::glue("<li>espèce: {espece}</li><li>auteur: {auteur}</li>")) %>% 
+  mutate(espece=stringr::str_extract(espece,"^[A-Z][a-z\\s]*"))
+```
+
+```{r}
+library(recitR)
+corresponding_wd_item=function(espece){
+  result=WikidataR::searcher(espece, type="item", language="en",limit=1) %>% 
+  purrr::map_chr("id")
+  if(is.null(result)){result=NA}
+  return(result)
+}
+replace_with_na=function(x){
+  if(length(x)==0){x=NA}
+  return(x)
+}
+if(!file.exists("base_bota.RDS")){
+base_bota=dat %>% 
+  group_by(espece) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n)) %>% 
+  ungroup() %>% 
+  mutate(wd_id=purrr::map(espece,purrr::safely(corresponding_wd_item))) %>% 
+  mutate(wd_id=purrr::map(wd_id,"result")) %>% 
+  mutate(wd_id=purrr::map_chr(wd_id,replace_with_na)) %>% 
+  mutate(wd_id=paste0("wd:",wd_id)) %>% 
+  mutate(img=purrr::map(wd_id,~get_triplets(subject=.x, verb="wdt:P18",object="?img")$img[1])) %>% 
+  mutate(img=purrr::map_chr(img,replace_with_na))
+
+saveRDS(base_bota,"base_bota.RDS")
+}
+base_bota=readRDS("base_bota.RDS")
+```
+
+```{r}
+dat=dat %>% 
+  left_join(base_bota,by=c("espece"))
+dat=dat %>% 
+  mutate(info=glue::glue("{info} <img src={img} width='200'>"))
+```
+
+```{r}
+library(leaflet)
+pal=colorFactor(palette="RdYlBu",dat$auteur)
+
+leaflet(dat) %>% 
+  setView(lng = 4.41, lat = 45.9, zoom = 8) %>% 
+  addTiles() %>% 
+  addCircles(color=~pal(auteur),
+             popup=~info)  
+```
+GBIF => plantnet dataset
+
+https://www.gbif.org/occurrence/map?dataset_key=14d5676a-2c54-4f94-9023-1e8dcd822aa0
