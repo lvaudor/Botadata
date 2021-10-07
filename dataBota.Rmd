@@ -1,5 +1,5 @@
 ---
-title: "Données Tela Botanica (départements 42 et 69)"
+title: "Données Tela Botanica"
 author: "Lise Vaudor"
 date: "06/10/2021"
 output: html_document
@@ -10,15 +10,27 @@ knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
 library(dplyr)
 ```
 
-Données Tela Botanica (départements 42 et 69)
+# Recueil et nettoyage des données
 
-```{r dat69, warning=FALSE, message=FALSE}
-dat=bind_rows(readr::read_csv("cel_export_1.csv"),
-                readr::read_csv("cel_export_2.csv"))%>% 
+Export des données Tela Botanica depuis [ce site](https://www.tela-botanica.org/ressources/donnees/) (départements 42 et 69)
+
+```{r recup_dat, warning=FALSE, message=FALSE}
+dat=bind_rows(readr::read_csv("data/cel_export_1.csv"),
+                readr::read_csv("data/cel_export_2.csv"))%>% 
   janitor::clean_names() %>% 
   mutate(info=glue::glue("<li>espèce: {espece}</li><li>auteur: {auteur}</li>")) %>% 
   mutate(espece=stringr::str_extract(espece,"^[A-Z][a-z\\s]*"))
 ```
+
+```{r view_dat}
+head(dat)
+```
+
+# Enrichissement par les Wikidata
+
+Recueil des identifiants Wikidata correspondant aux espèces, et ajout d'une url d'image correspondant aux espèces.
+
+L'interrogation des Wikidata lors de ces deux étapes peut prendre une vingtaine de minutes (pour environ 2500 espèces distinctes). => on enregistre le résultat dans un objet `data/base_Bota.RDS`.
 
 ```{r}
 library(recitR)
@@ -45,17 +57,20 @@ base_bota=dat %>%
   mutate(img=purrr::map(wd_id,~get_triplets(subject=.x, verb="wdt:P18",object="?img")$img[1])) %>% 
   mutate(img=purrr::map_chr(img,replace_with_na))
 
-saveRDS(base_bota,"base_bota.RDS")
+saveRDS(base_bota,"data/base_bota.RDS")
 }
-base_bota=readRDS("base_bota.RDS")
+base_bota=readRDS("data/base_bota.RDS")
 ```
+
+On rajoute l'image à la colonne `info` afin de la faire apparaître dans les popups de la carte.
 
 ```{r}
 dat=dat %>% 
-  left_join(base_bota,by=c("espece"))
-dat=dat %>% 
+  left_join(base_bota,by=c("espece"))%>% 
   mutate(info=glue::glue("{info} <img src={img} width='200'>"))
 ```
+
+# Carte
 
 ```{r}
 library(leaflet)
@@ -67,6 +82,7 @@ leaflet(dat) %>%
   addCircles(color=~pal(auteur),
              popup=~info)  
 ```
-GBIF => plantnet dataset
+
+Les jeux de données Tela Botanica semblent comporter moins de points que la base de données PlantNet de GBIF => à explorer!
 
 https://www.gbif.org/occurrence/map?dataset_key=14d5676a-2c54-4f94-9023-1e8dcd822aa0
